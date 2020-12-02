@@ -46,36 +46,61 @@ namespace Webscan.ProductStatusProcessor
             {
                 consumer.Subscribe(_kafkaSettings.Value.SchedulerTopicName);
 
-                while (!cancellationToken.IsCancellationRequested)
+                try
                 {
-                    var consumeResult = consumer.Consume(cancellationToken);
-                    
-                    StatusCheck statusCheck = JsonConvert.DeserializeObject<StatusCheck>(consumeResult.Message.Value);
-                    _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\tReceived Kafka Message on {_kafkaSettings.Value.SchedulerTopicName}");
-                    _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name}\n\t\t\t{statusCheck.Url}");
-                    // handle consumed message.
-                    bool productIsInStock = await _productQueryService.IsProductInStock(statusCheck);
-                    _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock: {productIsInStock}");
-                    if (productIsInStock)
+                    while (!cancellationToken.IsCancellationRequested)
                     {
-                        producerConfig.ClientId = statusCheck.Name;
-                        _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock sending notification message to {_kafkaSettings.Value.NotifierTopicName} topic");
-                        using (var p = new ProducerBuilder<Null, string>(producerConfig).Build())
-                        {
-                            var response = await p.ProduceAsync(_kafkaSettings.Value.NotifierTopicName, new Message<Null, string> { Value = JsonConvert.SerializeObject(statusCheck, Formatting.Indented) })
-                                .ContinueWith(task => task.IsFaulted
-                                        ? $"error producing message: {task.Exception.Message}"
-                                        : $"produced to: {task.Result.TopicPartitionOffset}");
+                        var consumeResult = consumer.Consume(cancellationToken);
 
-                            // wait for up to 10 seconds for any inflight messages to be delivered.
-                            p.Flush(TimeSpan.FromSeconds(10));
+                        StatusCheck statusCheck = JsonConvert.DeserializeObject<StatusCheck>(consumeResult.Message.Value);
+                        _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\tReceived Kafka Message on {_kafkaSettings.Value.SchedulerTopicName}");
+                        _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name}\n\t\t\t{statusCheck.Url}");
+                        // handle consumed message.
+                        bool productIsInStock = await _productQueryService.IsProductInStock(statusCheck);
+                        _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock: {productIsInStock}");
+                        if (productIsInStock)
+                        {
+                            producerConfig.ClientId = statusCheck.Name;
+                            _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock sending notification message to {_kafkaSettings.Value.NotifierTopicName} topic");
+                            using (var p = new ProducerBuilder<Null, string>(producerConfig).Build())
+                            {
+                                var response = await p.ProduceAsync(_kafkaSettings.Value.NotifierTopicName, new Message<Null, string> { Value = JsonConvert.SerializeObject(statusCheck, Formatting.Indented) })
+                                    .ContinueWith(task => task.IsFaulted
+                                            ? $"error producing message: {task.Exception.Message}"
+                                            : $"produced to: {task.Result.TopicPartitionOffset}");
+
+                                // wait for up to 10 seconds for any inflight messages to be delivered.
+                                p.Flush(TimeSpan.FromSeconds(10));
+                            }
+
                         }
 
                     }
 
+                    consumer.Close();
                 }
-            
-                consumer.Close();
+                catch (ConsumeException e)
+                {                    
+                    _logger.LogCritical(e, "Kafka Topic doesn't exist.");
+                    // Todo: Probably want some form of notification here.
+
+                    throw;
+                }
+                catch (OperationCanceledException e)
+                {
+                    //Swallow this since we expect this to occur when shutdown has been signaled.
+                    _logger.LogWarning(e, "A task/operation cancelled exception was caught.");
+                }
+                catch (Exception e)
+                {
+                    _logger.LogCritical(e, "An unhandled exception was thrown in the task processing background service.");
+                }
+                finally
+                {
+                    _logger.LogCritical("The task processing background service is shutting down!");
+                    // TODO Send email to group to alert to an issue.
+                    //_hostApplicationLifetime.StopApplication(); //Should we shutdown the app or alert somehow?
+                }
             }
 
 
