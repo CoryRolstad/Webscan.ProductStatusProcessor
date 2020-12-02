@@ -1,4 +1,5 @@
 using Confluent.Kafka;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,14 +17,12 @@ namespace Webscan.ProductStatusProcessor
         private readonly ILogger<ProductStatusWorker> _logger;
         private readonly IOptions<KafkaSettings> _kafkaSettings;
         private readonly IServiceProvider _serviceProvider;
-        private readonly IProductQueryService _productQueryService;
 
-        public ProductStatusWorker(ILogger<ProductStatusWorker> logger, IOptions<KafkaSettings> kafkaSettings, IServiceProvider serviceProvider, IProductQueryService productQueryService)
+        public ProductStatusWorker(ILogger<ProductStatusWorker> logger, IOptions<KafkaSettings> kafkaSettings, IServiceProvider serviceProvider)
         {
             _logger = logger ?? throw new ArgumentNullException($"{nameof(logger)} cannot be null");
             _kafkaSettings = kafkaSettings ?? throw new ArgumentNullException($"{nameof(kafkaSettings)} cannot be null");
             _serviceProvider = serviceProvider ?? throw new ArgumentOutOfRangeException($"{nameof(serviceProvider)} cannot be null");
-            _productQueryService = productQueryService ?? throw new ArgumentNullException($"{nameof(productQueryService)} cannot be null");
         }
 
         protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -56,7 +55,15 @@ namespace Webscan.ProductStatusProcessor
                         _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\tReceived Kafka Message on {_kafkaSettings.Value.SchedulerTopicName}");
                         _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name}\n\t\t\t{statusCheck.Url}");
                         // handle consumed message.
-                        bool productIsInStock = await _productQueryService.IsProductInStock(statusCheck);
+
+                        bool productIsInStock;
+
+                        using (IServiceScope scope = _serviceProvider.CreateScope())
+                        {
+                            IProductQueryService productQueryService = scope.ServiceProvider.GetRequiredService<IProductQueryService>();
+                            productIsInStock = await productQueryService.IsProductInStock(statusCheck);
+                        }
+                            
                         _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock: {productIsInStock}");
                         if (productIsInStock)
                         {

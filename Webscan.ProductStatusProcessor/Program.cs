@@ -24,7 +24,7 @@ namespace Webscan.ProductStatusProcessor
 
                     services.AddWebScannerService(configuration.GetSection("WebscannerSettings").Get<WebScannerSettings>());
 
-                    services.AddSingleton<IProductQueryService, ProductQueryService>(); 
+                    services.AddScoped<IProductQueryService, ProductQueryService>(); 
 
                     services.AddHostedService<ProductStatusWorker>();
                 });
