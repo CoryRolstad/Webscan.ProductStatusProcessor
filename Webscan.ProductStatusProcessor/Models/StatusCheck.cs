@@ -1,4 +1,6 @@
-﻿namespace Webscan.ProductStatusProcessor.Models
+﻿using System;
+
+namespace Webscan.ProductStatusProcessor.Models
 {
     public class StatusCheck
     {
@@ -11,6 +13,8 @@
         public string CronExpression { get; set; }
         // Or can have QueryTimeInSeconds (will query every X seconds)
         public int QueryTimeInSeconds { get; set; }
+        // Last Time the users were notified (for notification cool down, so we aren't spamming users)
+        public DateTime LastNotified { get; set; }
 
     }
 }
