@@ -6,7 +6,8 @@ WORKDIR /app
 FROM mcr.microsoft.com/dotnet/sdk:5.0-buster-slim AS build
 WORKDIR /src
 COPY ["Webscan.ProductStatusProcessor/Webscan.ProductStatusProcessor.csproj", "Webscan.ProductStatusProcessor/"]
-RUN dotnet restore "Webscan.ProductStatusProcessor/Webscan.ProductStatusProcessor.csproj"
+COPY nuget.config .
+RUN dotnet restore "Webscan.ProductStatusProcessor/Webscan.ProductStatusProcessor.csproj" --configfile ./nuget.config
 COPY . .
 WORKDIR "/src/Webscan.ProductStatusProcessor"
 RUN dotnet build "Webscan.ProductStatusProcessor.csproj" -c Release -o /app/build

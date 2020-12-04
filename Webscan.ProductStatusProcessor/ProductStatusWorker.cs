@@ -1,10 +1,12 @@
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Webscan.ProductStatusProcessor.Models;
@@ -23,6 +25,30 @@ namespace Webscan.ProductStatusProcessor
             _logger = logger ?? throw new ArgumentNullException($"{nameof(logger)} cannot be null");
             _kafkaSettings = kafkaSettings ?? throw new ArgumentNullException($"{nameof(kafkaSettings)} cannot be null");
             _serviceProvider = serviceProvider ?? throw new ArgumentOutOfRangeException($"{nameof(serviceProvider)} cannot be null");
+            
+            TopicTestAndCreate(_kafkaSettings.Value.SchedulerTopicName).Wait();
+        }
+
+        public async Task TopicTestAndCreate(string topicName)
+        {
+            // Ensure the topic has been created.
+            using (var adminClient = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _kafkaSettings.Value.Broker }).Build())
+            {
+                try
+                {
+                    Metadata topicsMetaData = adminClient.GetMetadata(topicName, new TimeSpan(0, 0, 30));
+                    bool topicExists = topicsMetaData.Topics.Any(t => t.Topic == topicName);
+                    if(!topicExists)
+                    {
+                        await adminClient.CreateTopicsAsync(new TopicSpecification[] {
+                        new TopicSpecification { Name = topicName, ReplicationFactor = 1, NumPartitions = 1 } });
+                    }
+                }
+                catch (CreateTopicsException e)
+                {
+                    _logger.LogInformation($"An error occured creating topic {e.Results[0].Topic}: {e.Results[0].Error.Reason}");
+                }
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken cancellationToken)
