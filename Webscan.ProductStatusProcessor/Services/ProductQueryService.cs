@@ -50,11 +50,11 @@ namespace Webscan.ProductStatusProcessor.Services
                 // Check to see if failure string is the same as retreived 
                 if (statusCheck.XPathContentFailureString != xPathContentString)
                 {
-                    return false;
+                    return true;
                 }
                 else
                 {
-                    return true;
+                    return false;
                 }
             }catch(ArgumentNullException e)
             {
