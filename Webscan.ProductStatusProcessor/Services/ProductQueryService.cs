@@ -33,8 +33,16 @@ namespace Webscan.ProductStatusProcessor.Services
                     RequestUri = new Uri(statusCheck.Url)
                 };
 
-                //string html = await _webScannerService.GetDocument(request);
-                string html = await _webScannerService.GetDocumentStealth(request);
+                string html = string.Empty; 
+                if(statusCheck.RenderingJavasciptRequired)
+                {
+                    html = await _webScannerService.GetDocumentWaitForXpath(request, statusCheck.XPath);
+                }
+                else
+                {
+                    html = await _webScannerService.GetDocumentStealth(request);
+                }
+                
                 string xPathContentString = await _webScannerService.GetXpathText(html, statusCheck.XPath);
 
                 _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}: Querying {statusCheck.Name} Complete");
@@ -46,7 +54,7 @@ namespace Webscan.ProductStatusProcessor.Services
                 }
                 else
                 {
-                    return false;
+                    return true;
                 }
             }catch(ArgumentNullException e)
             {

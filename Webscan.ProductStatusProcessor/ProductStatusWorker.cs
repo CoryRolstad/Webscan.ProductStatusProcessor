@@ -19,12 +19,14 @@ namespace Webscan.ProductStatusProcessor
         private readonly ILogger<ProductStatusWorker> _logger;
         private readonly IOptions<KafkaSettings> _kafkaSettings;
         private readonly IServiceProvider _serviceProvider;
+        private readonly Random _random;
 
         public ProductStatusWorker(ILogger<ProductStatusWorker> logger, IOptions<KafkaSettings> kafkaSettings, IServiceProvider serviceProvider)
         {
             _logger = logger ?? throw new ArgumentNullException($"{nameof(logger)} cannot be null");
             _kafkaSettings = kafkaSettings ?? throw new ArgumentNullException($"{nameof(kafkaSettings)} cannot be null");
             _serviceProvider = serviceProvider ?? throw new ArgumentOutOfRangeException($"{nameof(serviceProvider)} cannot be null");
+            _random = new Random(); 
             
             TopicTestAndCreate(_kafkaSettings.Value.SchedulerTopicName).Wait();
         }
@@ -80,6 +82,12 @@ namespace Webscan.ProductStatusProcessor
                         StatusCheck statusCheck = JsonConvert.DeserializeObject<StatusCheck>(consumeResult.Message.Value);
                         _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\tReceived Kafka Message on {_kafkaSettings.Value.SchedulerTopicName}");
                         _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name}\n\t\t\t{statusCheck.Url}");
+
+                        if(statusCheck.TimeScheduled.AddMinutes(2) < DateTime.Now)
+                        {
+                            _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} was scheduled at {statusCheck.TimeScheduled.ToString("MM/dd/yyyy hh:mm:ss.fff")} and is stale skipping!!!");
+                            continue;
+                        }
                         // handle consumed message.
 
                         bool productIsInStock;
@@ -87,6 +95,7 @@ namespace Webscan.ProductStatusProcessor
                         using (IServiceScope scope = _serviceProvider.CreateScope())
                         {
                             IProductQueryService productQueryService = scope.ServiceProvider.GetRequiredService<IProductQueryService>();
+
                             productIsInStock = await productQueryService.IsProductInStock(statusCheck);
                         }
                             
@@ -97,6 +106,7 @@ namespace Webscan.ProductStatusProcessor
                             _logger.LogInformation($"\t{DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss.fff")}:\t\t{statusCheck.Name} in stock sending notification message to {_kafkaSettings.Value.NotifierTopicName} topic");
                             using (var p = new ProducerBuilder<Null, string>(producerConfig).Build())
                             {
+                                statusCheck.TimeScheduled = DateTime.Now; 
                                 var response = await p.ProduceAsync(_kafkaSettings.Value.NotifierTopicName, new Message<Null, string> { Value = JsonConvert.SerializeObject(statusCheck, Formatting.Indented) })
                                     .ContinueWith(task => task.IsFaulted
                                             ? $"error producing message: {task.Exception.Message}"
