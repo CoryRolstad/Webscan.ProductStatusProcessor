@@ -23,7 +23,7 @@ WORKDIR /app
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y iputils-ping && \
     apt-get install -y tzdata && \
-    ln -fs /usr/share/zoneinfo/America/Chicago /etc/localtime && \
+    ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
 # Setup the sandbox for headless chrome - this also requires --cap-add=SYS_ADMIN when running the container
